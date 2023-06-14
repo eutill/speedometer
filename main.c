@@ -1,12 +1,22 @@
-//This is the version for ATmega328P
+//uncomment the desired target. Also adjust Makefile!
+#define ATMEGA328P
+//#define ATTINY45
 
+#ifdef ATMEGA328P
 #define F_CPU 16000000UL
-#define LED_PIN 5 //PB
 #define SER 1 //PD
 #define RCLK 0 //PD
 #define SRCLK 4 //PD
 #define DIODE INT0 //PD2
 
+#elif defined ATTINY45
+#define F_CPU 8000000UL
+#define SER 1 //PB
+#define RCLK 3 //PB
+#define SRCLK 4 //PB
+#define DIODE INT0 //PB2
+//Instead of connecting to INT0, diode can be connected to AC inputs: reference voltage and signal on PB0, PB1
+#endif
 
 #include <avr/io.h>
 #include <stdio.h>
@@ -25,7 +35,11 @@ void prepareTimer(void) {
 	TCCR0B = 0x00; //stop timer if still running
 	TCNT0 = 0x00; //reset timer register
 	TCCR0A = 0x00; //normal operation, timer counts up to MAX
+#ifdef ATMEGA328P
 	TIMSK0 = 0x01; //enable overflow interrupt
+#elif defined ATTINY45
+	TIMSK = 0x02; //enable overflow interrupt
+#endif
 	timerOverflow = 0;
 	//don't enable global interrupts just yet
 }
@@ -38,16 +52,26 @@ void stopTimer(void) {
 }
 
 void startTimer(void) {
+#ifdef ATMEGA328P
 	TCCR0B = 0x03; //start timer with prescaler 64
 	EICRA = 0x2; //interrupt on falling edge
+#elif defined ATTINY45
+	TCCR0B = 0x02; //start timer with prescaler 8
+	MCUCR = (MCUCR & ~(0x03)) | 0x02; //change the values of the bits 1 and 0 of MCUCR to 0b10, interrupt on falling edge
+#endif
 	startOrStopTimer = stopTimer; //adjust function pointer
 	measurementInProgress = 1;
 }
 
 void enableExtInt(void) {
 	prepareTimer();
+#ifdef ATMEGA328P
 	EICRA = 0x03; //external interrupt on rising edge
 	EIMSK = 0x01; //enable external interrupt on INT0
+#elif defined ATTINY45
+	MCUCR = (MCUCR & ~(0x03)) | 0x03; //interrupt on rising edge
+	GIMSK = (1 << 6); //enable external interrupt on INT0
+#endif
 	startOrStopTimer = startTimer;
 	sei();
 }
@@ -56,6 +80,7 @@ void shiftOut(uint8_t data) {
 	uint8_t bit;
 	for(int i=7;i>=0;i--) { //MSB first
 		bit = (data >> i) & (uint8_t) 1;
+#ifdef ATMEGA328P
 		if(bit == 1) {
 			PORTD |= _BV(SER);
 		} else {
@@ -66,19 +91,38 @@ void shiftOut(uint8_t data) {
 		_delay_ms(1);
 		PORTD &= ~(_BV(SRCLK));
 		_delay_ms(1);
+#elif defined ATTINY45
+		if(bit == 1) {
+                        PORTB |= _BV(SER);
+                } else {
+                        PORTB &= ~(_BV(SER));
+                }
+                _delay_ms(1);
+                PORTB |= _BV(SRCLK);
+                _delay_ms(1);
+                PORTB &= ~(_BV(SRCLK));
+                _delay_ms(1);
+#endif
 	}
 }
 
 void display(void) {
+#ifdef ATMEGA328P
 	PORTD |= _BV(RCLK);
 	_delay_ms(1);
 	PORTD &= ~(_BV(RCLK));
+#elif defined ATTINY45
+	PORTB |= _BV(RCLK);
+        _delay_ms(1);
+        PORTB &= ~(_BV(RCLK));
+#endif
 }
 
 void printTimeMicros(unsigned long timeMicros) {
 	if(timeMicros >= 1000000000) {
 		timeMicros = 999999999;
 	}
+	//TODO: round value to required display precision
 	char microsString[11];
 	snprintf(microsString, 11, "%.10lu", timeMicros);
 	for(int i=0;i<10;i++) { //replace each ASCII digit with its segment representation
@@ -114,14 +158,22 @@ void printTimeMicros(unsigned long timeMicros) {
 }
 
 void calcTime(void) {
+#ifdef ATMEGA328P
 	unsigned long time = (unsigned long)timerOverflow * 1024;
 	time += (unsigned long) 4 * TCNT0;
+#elif defined ATTINY45
+	unsigned long time = (unsigned long)timerOverflow * 256;
+        time += TCNT0;
+#endif
 	printTimeMicros(time);
 }
 
 int main(void) {
+#ifdef ATMEGA328P
         DDRD |= _BV(SER) | _BV(RCLK) | _BV(SRCLK);
-        DDRB |= (1 << LED_PIN);
+#elif defined ATTINY45
+        DDRB |= _BV(SER) | _BV(RCLK) | _BV(SRCLK);
+#endif
 
 	prepareTimer();
 
@@ -153,11 +205,7 @@ int main(void) {
 		}
 	}
 
-	while(1) {
-                PORTB ^= (1 << LED_PIN);
-                _delay_ms(500);
-        }
-        return 0;
+	return 0;
 }
 
 ISR(TIMER0_OVF_vect) {
