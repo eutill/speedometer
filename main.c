@@ -1,4 +1,4 @@
-//uncomment the desired target. Also adjust Makefile!
+//uncomment the desired target. Also choose corresponding Makefile!
 #define ATMEGA328P
 //#define ATTINY45
 
@@ -25,11 +25,11 @@
 
 uint8_t digits[] = {0b00111111, 0b00000110, 0b01011011, 0b01001111, 0b01100110, 0b01101101, 0b01111101, 0b00000111, 0b01111111, 0b01101111};
 volatile uint16_t timerOverflow = 0;
-uint8_t timerDone = 0;
-uint8_t measurementInProgress = 0;
+volatile uint8_t timerDone = 0;
+volatile uint8_t measurementInProgress = 0;
 
 typedef void (*startStopTimer_t) (void);
-startStopTimer_t startOrStopTimer;
+volatile startStopTimer_t startOrStopTimer;
 
 void prepareTimer(void) {
 	TCCR0B = 0x00; //stop timer if still running
@@ -177,21 +177,12 @@ int main(void) {
 
 	prepareTimer();
 
-	/*for(int i=3;i>0;i--) {
+	for(int i=3;i>0;i--) {
         	shiftOut(0xff);
         }
 	display();
-        
-	for(int i=3;i>0;i--) {
-                shiftOut(digits[i]);
-	        display();
-		_delay_ms(1000);
-        }*/
-        /*for(int i=3;i>0;i--) {
-                shiftOut(1<<6);
-        }
-        display();
-	*/
+	_delay_ms(1000);
+
 	printTimeMicros(0);
 	enableExtInt();
 	while(1) {
