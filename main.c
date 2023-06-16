@@ -129,6 +129,28 @@ void printTimeMicros(unsigned long timeMicros) {
 		microsString[i] -= '0';
 		microsString[i] = digits[(uint8_t) microsString[i]];
 	}
+	microsString[3] |= (1<<7); //decimal point for seconds
+	microsString[6] |= (1<<7); //decimal point for milliseconds
+	unsigned long boundaries[] = {10000,100000,1000000,10000000,100000000,1000000000};
+	for(int j=0;j<6;j++) {
+		if(timeMicros < boundaries[j]) {
+			for(int b=0;b<3;b++) {
+				char symbol = microsString[8-j-b];
+				if(b==0) { //Last digit is transmitted first
+					if(j>2) { //if displayed value is in seconds, the last digit will have an appended point
+						symbol |= (1 << 7);
+					} else { //if displayed value is in millisecs, no appended point (also not a decimal point)
+						symbol &= ~(1 << 7);
+					}
+				}
+				shiftOut(symbol);
+			}
+			display();
+			break;
+		}
+	}
+
+	/*
 	if(timeMicros < 10000) {
 		shiftOut(microsString[8]);
 		shiftOut(microsString[7]);
@@ -153,8 +175,7 @@ void printTimeMicros(unsigned long timeMicros) {
 		shiftOut(microsString[3] | (1 << 7));
 		shiftOut(microsString[2]);
 		shiftOut(microsString[1]);
-	}
-	display();
+	}*/
 }
 
 void calcTime(void) {
@@ -182,8 +203,8 @@ int main(void) {
         }
 	display();
 	_delay_ms(1000);
-
 	printTimeMicros(0);
+
 	enableExtInt();
 	while(1) {
 		while(measurementInProgress) {
