@@ -90,7 +90,7 @@ void enableExtInt(void) {
 	MCUCR = (MCUCR & ~(0x03)) | 0x03; //external interrupt on rising edge
 	GIMSK = (1 << INT0) | (1 << PCIE); //enable external interrupt on INT0 and pin change interrupt
 #endif
-	timerDone = 0; //falls nicht zuvor gelöscht
+	timerDone = 0; //if not already reset
 	buttonPushed = 0;
 }
 
@@ -165,7 +165,6 @@ void printTimeMicros(unsigned long timeMicros) {
 	if(timeMicros >= 1000000000) {
 		timeMicros = 999999999;
 	}
-	//TODO: round value to required display precision
 	char microsString[11];
 	snprintf(microsString, 11, "%.10lu", timeMicros);
 	for(int i=0;i<10;i++) { //replace each ASCII digit with its segment representation
@@ -192,33 +191,6 @@ void printTimeMicros(unsigned long timeMicros) {
 			break;
 		}
 	}
-
-	/*
-	if(timeMicros < 10000) {
-		shiftOut(microsString[8]);
-		shiftOut(microsString[7]);
-		shiftOut(microsString[6] | (1<<7)); //digit + decimal point
-	} else if(timeMicros < 100000) {
-		shiftOut(microsString[7]);
-		shiftOut(microsString[6] | (1<<7));
-		shiftOut(microsString[5]);
-	} else if(timeMicros < 1000000) {
-		shiftOut(microsString[6]);
-		shiftOut(microsString[5]);
-		shiftOut(microsString[4]);
-	} else if(timeMicros < 10000000) {
-		shiftOut(microsString[5] | (1 << 7));
-		shiftOut(microsString[4]);
-		shiftOut(microsString[3] | (1 << 7));
-	} else if(timeMicros < 100000000) {
-		shiftOut(microsString[4] | (1 << 7));
-		shiftOut(microsString[3] | (1 << 7));
-		shiftOut(microsString[2]);
-	} else {
-		shiftOut(microsString[3] | (1 << 7));
-		shiftOut(microsString[2]);
-		shiftOut(microsString[1]);
-	}*/
 }
 
 unsigned long calcTime() {
@@ -308,6 +280,7 @@ int main(void) {
 			_delay_ms(1500);
 		}
 		if(n > 0) {
+			//evaluation
 			avgSum /= n;
 			for(int i=0;i<3;i++) {
 				threeCharPrint(titleList[i]);
