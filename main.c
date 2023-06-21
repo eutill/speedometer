@@ -12,11 +12,11 @@
 
 #elif defined ATTINY45
 #define F_CPU 8000000UL
-#define SER 1 //PB
-#define RCLK 3 //PB
-#define SRCLK 4 //PB
+#define SER 0 //PB
+#define RCLK 4 //PB
+#define SRCLK 3 //PB
 #define DIODE 2 //PB, INT0
-#define PUSHBUTTON 0 //PB, PCINT0
+#define PUSHBUTTON 1 //PB, PCINT1
 #endif
 
 #include <avr/io.h>
@@ -25,6 +25,12 @@
 #include <util/delay.h>
 
 uint8_t digits[] = {0b00111111, 0b00000110, 0b01011011, 0b01001111, 0b01100110, 0b01101101, 0b01111101, 0b00000111, 0b01111111, 0b01101111};
+uint8_t seq[] = {0b01101101, 0b01111001, 0b10111111};
+uint8_t max[] = {0b00110111, 0b01110111, 0b01110110};
+uint8_t min[] = {0b00110111, 0b00010000, 0b01010100};
+uint8_t avg[] = {0b01110111, 0b00011100, 0b00111101};
+uint8_t dashes[] = {0b01000000, 0b01000000, 0b01000000};
+
 volatile uint16_t timerOverflow = 0;
 volatile uint8_t timerDone = 0;
 volatile uint8_t measurementInProgress = 0;
@@ -80,7 +86,7 @@ void enableExtInt(void) {
 	EIMSK = 0x01; //enable external interrupt on INT0
 #elif defined ATTINY45
 	GIFR  = (1 << INTF0) | (1 << PCIF); // clear pending interrupt flags
-	PCMSK = (1 << PCINT0); //enables pin change interrupt on PCINT0
+	PCMSK = (1 << PCINT1); //enables pin change interrupt on PCINT0
 	MCUCR = (MCUCR & ~(0x03)) | 0x03; //external interrupt on rising edge
 	GIMSK = (1 << INT0) | (1 << PCIE); //enable external interrupt on INT0 and pin change interrupt
 #endif
@@ -128,6 +134,31 @@ void display(void) {
         _delay_ms(1);
         PORTB &= ~(_BV(RCLK));
 #endif
+}
+
+void threeCharPrint(uint8_t *string) {
+	for(int8_t i=2;i>=0;i--) { //Last char first
+		shiftOut(*(string+i));
+	}
+	display();
+}
+
+void printInteger(uint16_t number) {
+	if(number > 999) {
+		number = 999;
+	}
+	char numberString[4];
+	snprintf(numberString, 4, "%3u", number);
+	for(int8_t i=2;i>=0;i--) { //Last char first
+		if(numberString[i] == ' ') {
+			numberString[i] = 0b00;
+		} else {
+			numberString[i] -= '0';
+			numberString[i] = digits[(uint8_t) numberString[i]];
+		}
+		shiftOut(numberString[i]);
+	}
+	display();
 }
 
 void printTimeMicros(unsigned long timeMicros) {
@@ -243,14 +274,54 @@ int main(void) {
         }
 	display();
 	_delay_ms(1000);
-	printTimeMicros(0);
 
+	uint16_t n;
+	unsigned long minVal;
+	unsigned long maxVal;
+	unsigned long avgSum;
+	unsigned long measurement;
+	uint8_t *titleList[] = {avg, min, max};
+	unsigned long *valueList[] = {&avgSum, &minVal, &maxVal};
 	while(1) {
-		if(!takeMeasurement(NULL)) {//button pressed
-			printTimeMicros(1230);
-			_delay_ms(2000);
-			printTimeMicros(0);
+		printTimeMicros(0);
+		while(1) { //Normal (single-shot) operation
+			if(!takeMeasurement(NULL)) {//button pressed
+				break;
+			}
 		}
+
+		n = 0;
+		avgSum = 0;
+		maxVal = 0;
+		minVal = 0-1;
+
+		//Sequence operation
+		threeCharPrint(seq);
+		_delay_ms(1000);
+		while(1) {
+			printInteger(n);
+			if(!takeMeasurement(&measurement)) {break;} //button pressed
+			avgSum += measurement;
+			if(measurement > maxVal) {maxVal = measurement;}
+			if(measurement < minVal) {minVal = measurement;}
+			n++;
+			_delay_ms(1500);
+		}
+		if(n > 0) {
+			avgSum /= n;
+			for(int i=0;i<3;i++) {
+				threeCharPrint(titleList[i]);
+				_delay_ms(2000);
+				printTimeMicros(*valueList[i]);
+#ifdef ATMEGA328P
+			while((PIND & (1 << PUSHBUTTON))); //active LOW
+#elif defined ATTINY45
+			while((PINB & (1 << PUSHBUTTON)));
+#endif
+			}
+		}
+		threeCharPrint(dashes);
+		_delay_ms(1000);
 	}
 
 	return 0;
