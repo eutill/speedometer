@@ -31,22 +31,22 @@ volatile uint8_t measurementInProgress = 0;
 typedef void (*startStopTimer_t) (void);
 volatile startStopTimer_t startOrStopTimer;
 
-void prepareTimer(void) {
-	TCCR0B = 0x00; //stop timer if still running
-	TCNT0 = 0x00; //reset timer register
+void configureTimer(void) {
 	TCCR0A = 0x00; //normal operation, timer counts up to MAX
 #ifdef ATMEGA328P
 	TIMSK0 = 0x01; //enable overflow interrupt
 #elif defined ATTINY45
 	TIMSK = 0x02; //enable overflow interrupt
 #endif
-	timerOverflow = 0;
-	//don't enable global interrupts just yet
 }
 
 void stopTimer(void) { //is being run by INT0 ISR
-	TCCR0B = 0x0;
-	cli();
+	TCCR0B = 0x00; //stop timer
+#ifdef ATMEGA328P
+	EIMSK = 0x00; //disable INT0 interrupts
+#elif defined ATTINY45
+	GIMSK &= ~(1 << INT0); //disable INT0 interrupts
+#endif
 	measurementInProgress = 0;
 	timerDone = 1;
 }
@@ -64,16 +64,19 @@ void startTimer(void) { //is being run by INT0 ISR
 }
 
 void enableExtInt(void) {
-	prepareTimer();
+	startOrStopTimer = startTimer;
+	TCNT0 = 0x00; //reset Timer0 register
+	timerOverflow = 0;
 #ifdef ATMEGA328P
+	EIFR |= (1<<INTF0); //clear pending interrupt flags, if any
 	EICRA = 0x03; //external interrupt on rising edge
 	EIMSK = 0x01; //enable external interrupt on INT0
 #elif defined ATTINY45
+	GIFR |= (1<<INTF0); // clear pending interrupt flags
 	MCUCR = (MCUCR & ~(0x03)) | 0x03; //interrupt on rising edge
-	GIMSK = (1 << 6); //enable external interrupt on INT0
+	GIMSK |= (1 << INT0); //enable external interrupt on INT0
 #endif
-	startOrStopTimer = startTimer;
-	sei();
+	timerDone = 0; //falls nicht zuvor gelöscht
 }
 
 void shiftOut(uint8_t data) {
@@ -136,7 +139,6 @@ void printTimeMicros(unsigned long timeMicros) {
 		if(timeMicros < boundaries[j]) {
 			for(int b=0;b<3;b++) {
 				char symbol = microsString[8-j-b];
-				//char symbol = microsString[9-j-b]; //to display last 3 of 4 digits
 				if(b==0) { //Last digit is transmitted first
 					if(j>2) { //if displayed value is in seconds, the last digit will have an appended point
 						symbol |= (1 << 7);
@@ -188,7 +190,6 @@ unsigned long calcTime() {
 	time = (unsigned long)timerOverflow * 256;
         time += TCNT0;
 #endif
-	//printTimeMicros(time);
 	return time;
 }
 
@@ -219,7 +220,8 @@ int main(void) {
         DDRB |= _BV(SER) | _BV(RCLK) | _BV(SRCLK);
 #endif
 
-	prepareTimer(); //TODO: why is this necessary here?
+	configureTimer();
+	sei();
 
 	for(int i=3;i>0;i--) {
         	shiftOut(0xff);
@@ -227,18 +229,6 @@ int main(void) {
 	display();
 	_delay_ms(1000);
 	printTimeMicros(0);
-
-	/*enableExtInt();
-	while(1) {
-		while(measurementInProgress) {
-			calcTime();
-		}
-		if(timerDone) {
-			calcTime();
-			enableExtInt();
-			timerDone = 0;
-		}
-	}*/
 
 	while(1) {
 		if(!takeMeasurement(NULL)) {//button pressed
