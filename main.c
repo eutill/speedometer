@@ -44,17 +44,17 @@ void prepareTimer(void) {
 	//don't enable global interrupts just yet
 }
 
-void stopTimer(void) {
+void stopTimer(void) { //is being run by INT0 ISR
 	TCCR0B = 0x0;
 	cli();
-	timerDone = 1;
 	measurementInProgress = 0;
+	timerDone = 1;
 }
 
-void startTimer(void) {
+void startTimer(void) { //is being run by INT0 ISR
 #ifdef ATMEGA328P
 	TCCR0B = 0x03; //start timer with prescaler 64
-	EICRA = 0x2; //interrupt on falling edge
+	EICRA = 0x02; //interrupt on falling edge
 #elif defined ATTINY45
 	TCCR0B = 0x02; //start timer with prescaler 8
 	MCUCR = (MCUCR & ~(0x03)) | 0x02; //change the values of the bits 1 and 0 of MCUCR to 0b10, interrupt on falling edge
@@ -136,6 +136,7 @@ void printTimeMicros(unsigned long timeMicros) {
 		if(timeMicros < boundaries[j]) {
 			for(int b=0;b<3;b++) {
 				char symbol = microsString[8-j-b];
+				//char symbol = microsString[9-j-b]; //to display last 3 of 4 digits
 				if(b==0) { //Last digit is transmitted first
 					if(j>2) { //if displayed value is in seconds, the last digit will have an appended point
 						symbol |= (1 << 7);
@@ -178,15 +179,37 @@ void printTimeMicros(unsigned long timeMicros) {
 	}*/
 }
 
-void calcTime(void) {
+unsigned long calcTime() {
+	unsigned long time;
 #ifdef ATMEGA328P
-	unsigned long time = (unsigned long)timerOverflow * 1024;
+	time = (unsigned long)timerOverflow * 1024;
 	time += (unsigned long) 4 * TCNT0;
 #elif defined ATTINY45
-	unsigned long time = (unsigned long)timerOverflow * 256;
+	time = (unsigned long)timerOverflow * 256;
         time += TCNT0;
 #endif
-	printTimeMicros(time);
+	//printTimeMicros(time);
+	return time;
+}
+
+uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and displays it. Interrupts measurement if button is pressed. Returns 1 if measurement completed, otherwise 0. If address != NULL is passed as argument, measured time is stored there.
+	enableExtInt();
+	unsigned long time;
+	while(1) {
+		if(measurementInProgress) {
+			time = calcTime();
+			printTimeMicros(time);
+		} else if(timerDone) {
+			time = calcTime();
+			printTimeMicros(time);
+			timerDone = 0;
+			if(duration != NULL) {
+				*duration = time;
+			}
+			return 1;
+		}
+		//TODO: if(button pressed)
+	}
 }
 
 int main(void) {
@@ -196,7 +219,7 @@ int main(void) {
         DDRB |= _BV(SER) | _BV(RCLK) | _BV(SRCLK);
 #endif
 
-	prepareTimer();
+	prepareTimer(); //TODO: why is this necessary here?
 
 	for(int i=3;i>0;i--) {
         	shiftOut(0xff);
@@ -205,7 +228,7 @@ int main(void) {
 	_delay_ms(1000);
 	printTimeMicros(0);
 
-	enableExtInt();
+	/*enableExtInt();
 	while(1) {
 		while(measurementInProgress) {
 			calcTime();
@@ -214,6 +237,12 @@ int main(void) {
 			calcTime();
 			enableExtInt();
 			timerDone = 0;
+		}
+	}*/
+
+	while(1) {
+		if(!takeMeasurement(NULL)) {//button pressed
+			printTimeMicros(1230);
 		}
 	}
 
