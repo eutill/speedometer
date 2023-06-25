@@ -1,6 +1,7 @@
 //uncomment the desired target. Also choose corresponding Makefile!
 #define ATMEGA328P
 //#define ATTINY45
+//#define ATTINY84A
 
 #ifdef ATMEGA328P
 #define F_CPU 16000000UL
@@ -17,6 +18,14 @@
 #define SRCLK 3 //PB
 #define DIODE 2 //PB, INT0
 #define PUSHBUTTON 1 //PB
+
+#elif defined ATTINY84A
+#define F_CPU 8000000UL
+#define SER 2 //PA
+#define RCLK 1 //PA
+#define SRCLK 0 //PA
+#define DIODE 2 //PB, INT0
+#define PUSHBUTTON 3 //PA
 #endif
 
 #include <avr/io.h>
@@ -40,7 +49,7 @@ volatile startStopTimer_t startOrStopTimer;
 
 void configureTimer(void) {
 	TCCR0A = 0x00; //normal operation, timer counts up to MAX
-#ifdef ATMEGA328P
+#if defined (ATMEGA328P) || defined (ATTINY84A)
 	TIMSK0 = 0x01; //enable overflow interrupt
 #elif defined ATTINY45
 	TIMSK = 0x02; //enable overflow interrupt
@@ -51,7 +60,7 @@ void stopTimer(void) { //is also being run by INT0 ISR
 	TCCR0B = 0x00; //stop timer
 #ifdef ATMEGA328P
 	EIMSK = 0x00; //disable INT0 interrupts
-#elif defined ATTINY45
+#elif defined (ATTINY84A) || defined (ATTINY45)
 	GIMSK = 0x00; //disable INT0 interrupts
 #endif
 	measurementInProgress = 0;
@@ -62,7 +71,7 @@ void startTimer(void) { //is being run by INT0 ISR
 #ifdef ATMEGA328P
 	TCCR0B = 0x03; //start timer with prescaler 64
 	EICRA = 0x02; //interrupt on falling edge
-#elif defined ATTINY45
+#elif defined (ATTINY84A) || defined (ATTINY45)
 	TCCR0B = 0x02; //start timer with prescaler 8
 	MCUCR = (MCUCR & ~(0x03)) | 0x02; //change the values of the bits 1 and 0 of MCUCR to 0b10, interrupt on falling edge
 #endif
@@ -78,7 +87,7 @@ void enableExtInt(void) {
 	EIFR |= (1<<INTF0); //clear pending interrupt flag, if any
 	EICRA = 0x03; //external interrupt on rising edge
 	EIMSK = 0x01; //enable external interrupt on INT0
-#elif defined ATTINY45
+#elif defined (ATTINY45) || defined (ATTINY84A)
 	GIFR  = (1 << INTF0); // clear pending interrupt flag
 	MCUCR = (MCUCR & ~(0x03)) | 0x03; //external interrupt on rising edge
 	GIMSK = (1 << INT0); //enable external interrupt on INT0
@@ -112,6 +121,17 @@ void shiftOut(uint8_t data) {
                 _delay_ms(1);
                 PORTB &= ~(_BV(SRCLK));
                 _delay_ms(1);
+#elif defined ATTINY84A
+		if(bit == 1) {
+                        PORTA |= _BV(SER);
+                } else {
+                        PORTA &= ~(_BV(SER));
+                }
+                _delay_ms(1);
+                PORTA |= _BV(SRCLK);
+                _delay_ms(1);
+                PORTA &= ~(_BV(SRCLK));
+                _delay_ms(1);
 #endif
 	}
 }
@@ -125,6 +145,10 @@ void display(void) {
 	PORTB |= _BV(RCLK);
         _delay_ms(1);
         PORTB &= ~(_BV(RCLK));
+#elif defined ATTINY84A
+	PORTA |= _BV(RCLK);
+        _delay_ms(1);
+        PORTA &= ~(_BV(RCLK));
 #endif
 }
 
@@ -190,7 +214,7 @@ unsigned long calcTime() {
 #ifdef ATMEGA328P
 	time = (unsigned long)timerOverflow * 1024;
 	time += (unsigned long) 4 * TCNT0;
-#elif defined ATTINY45
+#elif defined (ATTINY45) || defined (ATTINY84A)
 	time = (unsigned long)timerOverflow * 256;
         time += TCNT0;
 #endif
@@ -217,6 +241,8 @@ uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and disp
 		if(!(PIND & (1 << PUSHBUTTON))) { //active LOW
 #elif defined ATTINY45
 		if(!(PINB & (1 << PUSHBUTTON))) { //active LOW
+#elif defined (ATTINY45) || defined (ATTINY84A)
+		if(!(PINA & (1 << PUSHBUTTON))) { //active LOW
 #endif
 			stopTimer();
 			return 0;
@@ -231,6 +257,9 @@ int main(void) {
 #elif defined ATTINY45
         DDRB |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
 	PORTB |= _BV(PUSHBUTTON); //enable pull-up
+#elif defined ATTINY84A
+        DDRA |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
+	PORTA |= _BV(PUSHBUTTON); //enable pull-up
 #endif
 
 	configureTimer();
@@ -285,6 +314,8 @@ int main(void) {
 			while((PIND & (1 << PUSHBUTTON))); //active LOW
 #elif defined ATTINY45
 			while((PINB & (1 << PUSHBUTTON)));
+#elif defined ATTINY84A
+			while((PINA & (1 << PUSHBUTTON)));
 #endif
 			}
 		}
@@ -295,11 +326,19 @@ int main(void) {
 	return 0;
 }
 
+#if defined (ATMEGA328P) || defined (ATTINY45)
 ISR(TIMER0_OVF_vect) {
+#elif defined ATTINY84A
+ISR(TIM0_OVF_vect) {
+#endif
 	timerOverflow++;
 }
 
+#if defined (ATMEGA328P) || defined (ATTINY45)
 ISR(INT0_vect) {
+#elif defined ATTINY84A
+ISR(EXT_INT0_vect) {
+#endif
 	startOrStopTimer();
 }
 
