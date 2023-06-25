@@ -8,7 +8,7 @@
 #define RCLK 0 //PD
 #define SRCLK 4 //PD
 #define DIODE 2 //PD, INT0
-#define PUSHBUTTON 5 //PD, PCINT21
+#define PUSHBUTTON 5 //PD
 
 #elif defined ATTINY45
 #define F_CPU 8000000UL
@@ -16,7 +16,7 @@
 #define RCLK 4 //PB
 #define SRCLK 3 //PB
 #define DIODE 2 //PB, INT0
-#define PUSHBUTTON 1 //PB, PCINT1
+#define PUSHBUTTON 1 //PB
 #endif
 
 #include <avr/io.h>
@@ -38,8 +38,6 @@ volatile uint8_t measurementInProgress = 0;
 typedef void (*startStopTimer_t) (void);
 volatile startStopTimer_t startOrStopTimer;
 
-volatile uint8_t buttonPushed = 0;
-
 void configureTimer(void) {
 	TCCR0A = 0x00; //normal operation, timer counts up to MAX
 #ifdef ATMEGA328P
@@ -53,9 +51,8 @@ void stopTimer(void) { //is also being run by INT0 ISR
 	TCCR0B = 0x00; //stop timer
 #ifdef ATMEGA328P
 	EIMSK = 0x00; //disable INT0 interrupts
-	PCICR = 0x00; //disable PC interrupts
 #elif defined ATTINY45
-	GIMSK = 0x00; //disable INT0 and PC interrupts
+	GIMSK = 0x00; //disable INT0 interrupts
 #endif
 	measurementInProgress = 0;
 	timerDone = 1;
@@ -78,20 +75,15 @@ void enableExtInt(void) {
 	TCNT0 = 0x00; //reset Timer0 register
 	timerOverflow = 0;
 #ifdef ATMEGA328P
-	PCIFR |= (1<<PCIF2); //clear pending interrupt flags, if any
-	PCMSK2 = (1<<PCINT21); //set mask for PCINT21
-	PCICR = (1<<PCIE2); //enable pin change interrupt PCI2
-	EIFR |= (1<<INTF0); //clear pending interrupt flags, if any
+	EIFR |= (1<<INTF0); //clear pending interrupt flag, if any
 	EICRA = 0x03; //external interrupt on rising edge
 	EIMSK = 0x01; //enable external interrupt on INT0
 #elif defined ATTINY45
-	GIFR  = (1 << INTF0) | (1 << PCIF); // clear pending interrupt flags
-	PCMSK = (1 << PCINT1); //enables pin change interrupt on PCINT0
+	GIFR  = (1 << INTF0); // clear pending interrupt flag
 	MCUCR = (MCUCR & ~(0x03)) | 0x03; //external interrupt on rising edge
-	GIMSK = (1 << INT0) | (1 << PCIE); //enable external interrupt on INT0 and pin change interrupt
+	GIMSK = (1 << INT0); //enable external interrupt on INT0
 #endif
 	timerDone = 0; //if not already reset
-	buttonPushed = 0;
 }
 
 void shiftOut(uint8_t data) {
@@ -221,8 +213,11 @@ uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and disp
 			}
 			return 1;
 		}
-		if(buttonPushed) {
-			buttonPushed = 0;
+#ifdef ATMEGA328P
+		if(!(PIND & (1 << PUSHBUTTON))) { //active LOW
+#elif defined ATTINY45
+		if(!(PINB & (1 << PUSHBUTTON))) { //active LOW
+#endif
 			stopTimer();
 			return 0;
 		}
@@ -308,10 +303,3 @@ ISR(INT0_vect) {
 	startOrStopTimer();
 }
 
-#ifdef ATMEGA328P
-ISR(PCINT2_vect) {
-#elif defined ATTINY45
-ISR(PCINT0_vect) {
-#endif
-	buttonPushed = 1;
-}
