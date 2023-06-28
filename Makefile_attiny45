@@ -2,7 +2,7 @@ MCU=attiny45
 MCU2=t45
 FILENAME = main
 PROGRAMMER = avrisp
-PORT = /dev/ttyUSB0
+PORT = /dev/ttyACM0
 BAUD = 115200
 
 COMPILE = avr-gcc -Wall -Os -mmcu=$(MCU)

@@ -1,7 +1,7 @@
 //uncomment the desired target. Also choose corresponding Makefile!
-#define ATMEGA328P
+//#define ATMEGA328P
 //#define ATTINY45
-//#define ATTINY84A
+#define ATTINY84A
 
 #ifdef ATMEGA328P
 #define F_CPU 16000000UL
@@ -27,6 +27,8 @@
 #define DIODE 2 //PB, INT0
 #define PUSHBUTTON 3 //PA
 #endif
+
+#define SHREG_BACKWARDS
 
 #include <avr/io.h>
 #include <stdio.h>
@@ -153,7 +155,11 @@ void display(void) {
 }
 
 void threeCharPrint(uint8_t *string) {
+#ifdef SHREG_BACKWARDS
+	for(int8_t i=0;i<3;i++) { //First char first
+#else
 	for(int8_t i=2;i>=0;i--) { //Last char first
+#endif
 		shiftOut(*(string+i));
 	}
 	display();
@@ -165,7 +171,11 @@ void printInteger(uint16_t number) {
 	}
 	char numberString[4];
 	snprintf(numberString, 4, "%3u", number);
+#ifdef SHREG_BACKWARDS
+	for(int8_t i=0;i<3;i++) { //First char first
+#else
 	for(int8_t i=2;i>=0;i--) { //Last char first
+#endif
 		if(numberString[i] == ' ') {
 			numberString[i] = 0b00;
 		} else {
@@ -192,9 +202,13 @@ void printTimeMicros(unsigned long timeMicros) {
 	unsigned long boundaries[] = {10000,100000,1000000,10000000,100000000,1000000000};
 	for(int j=0;j<6;j++) {
 		if(timeMicros < boundaries[j]) {
-			for(int b=0;b<3;b++) {
+#ifdef SHREG_BACKWARDS
+			for(int8_t b=2;b>=0;b--) { //First digit is transmitted first
+#else
+			for(int8_t b=0;b<3;b++) { //Last digit is transmitted first
+#endif
 				char symbol = microsString[8-j-b];
-				if(b==0) { //Last digit is transmitted first
+				if(b==0) {
 					if(j>2) { //if displayed value is in seconds, the last digit will have an appended point
 						symbol |= (1 << 7);
 					} else { //if displayed value is in millisecs, no appended point (also not a decimal point)
@@ -241,7 +255,7 @@ uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and disp
 		if(!(PIND & (1 << PUSHBUTTON))) { //active LOW
 #elif defined ATTINY45
 		if(!(PINB & (1 << PUSHBUTTON))) { //active LOW
-#elif defined (ATTINY45) || defined (ATTINY84A)
+#elif defined ATTINY84A
 		if(!(PINA & (1 << PUSHBUTTON))) { //active LOW
 #endif
 			stopTimer();
