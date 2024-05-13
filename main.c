@@ -212,11 +212,21 @@ void uartStr(char* valStr) {
 #ifndef ATTINY84A
 	return;
 #endif
+	uint8_t leadingZeroes = 1;
 	for(uint8_t i=0;i<11;i++) {
 		if(valStr[i] == 0) {
 			break;
 		}
+		if(leadingZeroes) {
+			if(valStr[i] == '0') {
+				continue;
+			}
+			leadingZeroes = 0;
+		}
 		uartTx(valStr[i]);
+	}
+	if(leadingZeroes) { //there have only been zeroes in the value, but none transmitted so far
+		uartTx('0');
 	}
 	uartTx('\n');
 }
