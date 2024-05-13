@@ -26,9 +26,13 @@
 #define SRCLK 0 //PA
 #define DIODE 2 //PB, INT0
 #define PUSHBUTTON 3 //PA
+#define UARTX 5 //PA
 #endif
 
 #define SHREG_BACKWARDS
+
+#define UART_PRINT 1
+#define UART_NO_PRINT 0
 
 #include <avr/io.h>
 #include <stdio.h>
@@ -187,12 +191,45 @@ void printInteger(uint16_t number) {
 	display();
 }
 
-void printTimeMicros(unsigned long timeMicros) {
+volatile uint16_t uartData = 0;
+
+void uartTx(char valChar) {
+	//9600 bps UART is used, with 8 data bits, no parity bits, and 1 stop bit.
+	uartData = ((uint16_t) valChar << 1);
+	uartData |= (1 << 9);
+	//configure timer
+	OCR1A = 833; //sets compare/match register to 833, corresponding to 104µs (1 bit at 9600bd) at F_CPU = 8 MHz
+	TIFR1 |= (1 << OCF1A); //clears any pending interrupt flags
+	TIMSK1 = 1 << OCIE1A; //enables compare/match A interrupts
+	//enable timer
+	TCCR1B = (1 << WGM12) | (1 << CS10); //starts timer in CTC mode, with no prescaler
+	//pull line low for start bit
+	PORTA &= ~(1 << UARTX);
+	while(uartData != 0);
+}
+
+void uartStr(char* valStr) {
+#ifndef ATTINY84A
+	return;
+#endif
+	for(uint8_t i=0;i<11;i++) {
+		if(valStr[i] == 0) {
+			break;
+		}
+		uartTx(valStr[i]);
+	}
+	uartTx('\n');
+}
+
+void printTimeMicros(unsigned long timeMicros, uint8_t uartPrint) {
 	if(timeMicros >= 1000000000) {
 		timeMicros = 999999999;
 	}
 	char microsString[11];
 	snprintf(microsString, 11, "%.10lu", timeMicros);
+	if(uartPrint) {
+		uartStr(microsString);
+	}
 	for(int i=0;i<10;i++) { //replace each ASCII digit with its segment representation
 		microsString[i] -= '0';
 		microsString[i] = digits[(uint8_t) microsString[i]];
@@ -241,10 +278,10 @@ uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and disp
 	while(1) {
 		if(measurementInProgress) {
 			time = calcTime();
-			printTimeMicros(time);
+			printTimeMicros(time, UART_NO_PRINT);
 		} else if(timerDone) {
 			time = calcTime();
-			printTimeMicros(time);
+			printTimeMicros(time, UART_PRINT);
 			timerDone = 0;
 			if(duration != NULL) {
 				*duration = time;
@@ -272,7 +309,8 @@ int main(void) {
         DDRB |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
 	PORTB |= _BV(PUSHBUTTON); //enable pull-up
 #elif defined ATTINY84A
-        DDRA |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
+	DDRA |= _BV(SER) | _BV(RCLK) | _BV(SRCLK) | _BV(UARTX); //set these pins as outputs
+	PORTA |= _BV(UARTX); //pull UARTX pin high (UART line standby)
 	PORTA |= _BV(PUSHBUTTON); //enable pull-up
 #endif
 
@@ -293,9 +331,9 @@ int main(void) {
 	uint8_t *titleList[] = {avg, min, max};
 	unsigned long *valueList[] = {&avgSum, &minVal, &maxVal};
 	while(1) {
-		printTimeMicros(0);
+		printTimeMicros(0, UART_NO_PRINT);
 		while(1) { //Normal (single-shot) operation
-			if(!takeMeasurement(NULL)) {//button pressed
+			if(!takeMeasurement(NULL)) { //button pressed
 				break;
 			}
 		}
@@ -323,7 +361,7 @@ int main(void) {
 			for(int i=0;i<3;i++) {
 				threeCharPrint(titleList[i]);
 				_delay_ms(2000);
-				printTimeMicros(*valueList[i]);
+				printTimeMicros(*valueList[i], UART_NO_PRINT);
 #ifdef ATMEGA328P
 			while((PIND & (1 << PUSHBUTTON))); //active LOW
 #elif defined ATTINY45
@@ -356,3 +394,20 @@ ISR(EXT_INT0_vect) {
 	startOrStopTimer();
 }
 
+#if defined ATTINY84A
+ISR(TIM1_COMPA_vect) {
+	uartData = uartData >> 1;
+	if(uartData == 0) { //finished transmitting, stop timer
+		//last bit was stop bit, so no need to pull line up again for standby
+		TCCR1B = (1 << WGM12); //stop timer
+		TCNT1 = (uint16_t) 0; //reset counter
+		return;
+	}
+
+	if(uartData & 0x01) {
+		PORTA |= _BV(UARTX);
+	} else {
+		PORTA &= ~(1 << UARTX);
+	}
+}
+#endif
