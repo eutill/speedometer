@@ -26,3 +26,7 @@ Basically, an appended dot at the end of the value is not meant to be a decimal 
 
 ## Sequential mode
 In its standard operating mode, the device takes one-shot measurements. The operator would need to copy the results manually and evaluate them separately. This is where the sequential mode comes into play: It is meant to take multiple measurements at a single shutter speed setting and then display the arithmetic mean, minimum and maximum values in order for the operator to get a sense of the deviation and distribution of the results. In this mode, the number of measurements taken before evaluation is up to the user. It is engaged and disengaged with a simple pushbutton press.
+
+## Serial connection
+In order to transmit the measured values to a connected device via serial connection, the code has implemented a bit-banged UART transmission at 9600 bauds *only with the ATtiny84A*. The serial connection uses the 16-bit `Timer1` and the `PA5` pin for output (Pin 1 on the 6-pin AVR ISP connector). The values transmitted are in microseconds, each followed by a `\n` (newline character).  
+This way, any further analysis and processing of the values can be done from a connected computer. No longer manually copying values into a spreadsheet!
