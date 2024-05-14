@@ -5,28 +5,41 @@
 
 #ifdef ATMEGA328P
 #define F_CPU 16000000UL
+#define IODDR DDRD
+#define IOPORT PORTD
+#define IOPIN PIND
 #define SER 1 //PD
 #define RCLK 0 //PD
 #define SRCLK 4 //PD
-#define DIODE 2 //PD, INT0
 #define PUSHBUTTON 5 //PD
+
+#define DIODE 2 //PD, INT0
+
 
 #elif defined ATTINY45
 #define F_CPU 8000000UL
+#define IODDR DDRB
+#define IOPORT PORTB
+#define IOPIN PINB
 #define SER 0 //PB
 #define RCLK 4 //PB
 #define SRCLK 3 //PB
-#define DIODE 2 //PB, INT0
 #define PUSHBUTTON 1 //PB
+
+#define DIODE 2 //PB, INT0
 
 #elif defined ATTINY84A
 #define F_CPU 8000000UL
+#define IODDR DDRA
+#define IOPORT PORTA
+#define IOPIN PINA
 #define SER 2 //PA
 #define RCLK 1 //PA
 #define SRCLK 0 //PA
-#define DIODE 2 //PB, INT0
 #define PUSHBUTTON 3 //PA
 #define UARTX 5 //PA
+
+#define DIODE 2 //PB, INT0
 #endif
 
 #define SHREG_BACKWARDS
@@ -39,12 +52,12 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-uint8_t digits[] = {0b00111111, 0b00000110, 0b01011011, 0b01001111, 0b01100110, 0b01101101, 0b01111101, 0b00000111, 0b01111111, 0b01101111};
-uint8_t seq[] = {0b01101101, 0b01111001, 0b10111111};
-uint8_t max[] = {0b00110111, 0b01110111, 0b01110110};
-uint8_t min[] = {0b00110111, 0b00010000, 0b01010100};
-uint8_t avg[] = {0b01110111, 0b00011100, 0b00111101};
-uint8_t dashes[] = {0b01000000, 0b01000000, 0b01000000};
+static uint8_t digits[] = {0b00111111, 0b00000110, 0b01011011, 0b01001111, 0b01100110, 0b01101101, 0b01111101, 0b00000111, 0b01111111, 0b01101111};
+static uint8_t seq[] = {0b01101101, 0b01111001, 0b10111111};
+static uint8_t max[] = {0b00110111, 0b01110111, 0b01110110};
+static uint8_t min[] = {0b00110111, 0b00010000, 0b01010100};
+static uint8_t avg[] = {0b01110111, 0b00011100, 0b00111101};
+static uint8_t dashes[] = {0b01000000, 0b01000000, 0b01000000};
 
 volatile uint16_t timerOverflow = 0;
 volatile uint8_t timerDone = 0;
@@ -95,7 +108,7 @@ void enableExtInt(void) {
 	EIMSK = 0x01; //enable external interrupt on INT0
 #elif defined (ATTINY45) || defined (ATTINY84A)
 	GIFR  = (1 << INTF0); // clear pending interrupt flag
-	MCUCR = (MCUCR & ~(0x03)) | 0x03; //external interrupt on rising edge
+	MCUCR = MCUCR | 0x03; //external interrupt on rising edge
 	GIMSK = (1 << INT0); //enable external interrupt on INT0
 #endif
 	timerDone = 0; //if not already reset
@@ -105,57 +118,23 @@ void shiftOut(uint8_t data) {
 	uint8_t bit;
 	for(int i=7;i>=0;i--) { //MSB first
 		bit = (data >> i) & (uint8_t) 1;
-#ifdef ATMEGA328P
-		if(bit == 1) {
-			PORTD |= _BV(SER);
+		if(bit) {
+			IOPORT |= _BV(SER);
 		} else {
-			PORTD &= ~(_BV(SER));
+			IOPORT &= ~(_BV(SER));
 		}
 		_delay_ms(1);
-		PORTD |= _BV(SRCLK);
+		IOPORT |= _BV(SRCLK);
 		_delay_ms(1);
-		PORTD &= ~(_BV(SRCLK));
+		IOPORT &= ~(_BV(SRCLK));
 		_delay_ms(1);
-#elif defined ATTINY45
-		if(bit == 1) {
-                        PORTB |= _BV(SER);
-                } else {
-                        PORTB &= ~(_BV(SER));
-                }
-                _delay_ms(1);
-                PORTB |= _BV(SRCLK);
-                _delay_ms(1);
-                PORTB &= ~(_BV(SRCLK));
-                _delay_ms(1);
-#elif defined ATTINY84A
-		if(bit == 1) {
-                        PORTA |= _BV(SER);
-                } else {
-                        PORTA &= ~(_BV(SER));
-                }
-                _delay_ms(1);
-                PORTA |= _BV(SRCLK);
-                _delay_ms(1);
-                PORTA &= ~(_BV(SRCLK));
-                _delay_ms(1);
-#endif
 	}
 }
 
 void display(void) {
-#ifdef ATMEGA328P
-	PORTD |= _BV(RCLK);
+	IOPORT |= _BV(RCLK);
 	_delay_ms(1);
-	PORTD &= ~(_BV(RCLK));
-#elif defined ATTINY45
-	PORTB |= _BV(RCLK);
-        _delay_ms(1);
-        PORTB &= ~(_BV(RCLK));
-#elif defined ATTINY84A
-	PORTA |= _BV(RCLK);
-        _delay_ms(1);
-        PORTA &= ~(_BV(RCLK));
-#endif
+	IOPORT &= ~(_BV(RCLK));
 }
 
 void threeCharPrint(uint8_t *string) {
@@ -191,12 +170,13 @@ void printInteger(uint16_t number) {
 	display();
 }
 
+#ifdef ATTINY84A
 volatile uint16_t uartData = 0;
 
 void uartTx(char valChar) {
 	//9600 bps UART is used, with 8 data bits, no parity bits, and 1 stop bit.
-	uartData = ((uint16_t) valChar << 1);
-	uartData |= (1 << 9);
+	uartData = (uint16_t) valChar << 1; //LSB is for start bit
+	uartData |= (1 << 9); //stop bit
 	//configure timer
 	OCR1A = 833; //sets compare/match register to 833, corresponding to 104µs (1 bit at 9600bd) at F_CPU = 8 MHz
 	TIFR1 |= (1 << OCF1A); //clears any pending interrupt flags
@@ -207,11 +187,12 @@ void uartTx(char valChar) {
 	PORTA &= ~(1 << UARTX);
 	while(uartData != 0);
 }
+#endif
 
 void uartStr(char* valStr) {
 #ifndef ATTINY84A
 	return;
-#endif
+#else
 	uint8_t leadingZeroes = 1;
 	for(uint8_t i=0;i<11;i++) {
 		if(valStr[i] == 0) {
@@ -229,6 +210,7 @@ void uartStr(char* valStr) {
 		uartTx('0');
 	}
 	uartTx('\n');
+#endif
 }
 
 void printTimeMicros(unsigned long timeMicros, uint8_t uartPrint) {
@@ -272,12 +254,12 @@ void printTimeMicros(unsigned long timeMicros, uint8_t uartPrint) {
 
 unsigned long calcTime() {
 	unsigned long time;
-#ifdef ATMEGA328P
-	time = (unsigned long)timerOverflow * 1024;
-	time += (unsigned long) 4 * TCNT0;
-#elif defined (ATTINY45) || defined (ATTINY84A)
-	time = (unsigned long)timerOverflow * 256;
-        time += TCNT0;
+#ifdef ATMEGA328P //F_CPU = 16 MHz, prescaler value = 64
+	time = (unsigned long)timerOverflow << 10; //every timer overflow corresponds to 1024 µs
+	time |= (unsigned long) TCNT0 << 2; //every remaining clock tick corresponds to 4 µs
+#elif defined (ATTINY45) || defined (ATTINY84A) //F_CPU = 8 MHz, prescaler value = 8
+	time = (unsigned long)timerOverflow << 8; //every timer overflow corresponds to 256 µs
+	time |= (unsigned long) TCNT0; //every remaining clock tick corresponds to 1 µs
 #endif
 	return time;
 }
@@ -298,13 +280,7 @@ uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and disp
 			}
 			return 1;
 		}
-#ifdef ATMEGA328P
-		if(!(PIND & (1 << PUSHBUTTON))) { //active LOW
-#elif defined ATTINY45
-		if(!(PINB & (1 << PUSHBUTTON))) { //active LOW
-#elif defined ATTINY84A
-		if(!(PINA & (1 << PUSHBUTTON))) { //active LOW
-#endif
+		if(!(IOPIN & (1 << PUSHBUTTON))) { //active LOW
 			stopTimer();
 			return 0;
 		}
@@ -312,24 +288,20 @@ uint8_t takeMeasurement(unsigned long *duration) {//takes a measurement and disp
 }
 
 int main(void) {
-#ifdef ATMEGA328P
-        DDRD |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
-	PORTD |= _BV(PUSHBUTTON); //enable pull-up
-#elif defined ATTINY45
-        DDRB |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
-	PORTB |= _BV(PUSHBUTTON); //enable pull-up
-#elif defined ATTINY84A
-	DDRA |= _BV(SER) | _BV(RCLK) | _BV(SRCLK) | _BV(UARTX); //set these pins as outputs
-	PORTA |= _BV(UARTX); //pull UARTX pin high (UART line standby)
-	PORTA |= _BV(PUSHBUTTON); //enable pull-up
+#if defined ATTINY84A
+	IODDR |= _BV(SER) | _BV(RCLK) | _BV(SRCLK) | _BV(UARTX); //set these pins as outputs
+	IOPORT |= _BV(UARTX); //pull UARTX pin high (UART line standby)
+#else
+	IODDR |= _BV(SER) | _BV(RCLK) | _BV(SRCLK); //set these pins as outputs
 #endif
+	IOPORT |= _BV(PUSHBUTTON); //enable pull-up
 
 	configureTimer();
 	sei();
 
 	for(int i=3;i>0;i--) {
-        	shiftOut(0xff);
-        }
+		shiftOut(0xff);
+	}
 	display();
 	_delay_ms(1000);
 
@@ -372,13 +344,7 @@ int main(void) {
 				threeCharPrint(titleList[i]);
 				_delay_ms(2000);
 				printTimeMicros(*valueList[i], UART_NO_PRINT);
-#ifdef ATMEGA328P
-			while((PIND & (1 << PUSHBUTTON))); //active LOW
-#elif defined ATTINY45
-			while((PINB & (1 << PUSHBUTTON)));
-#elif defined ATTINY84A
-			while((PINA & (1 << PUSHBUTTON)));
-#endif
+				while((IOPIN & (1 << PUSHBUTTON))); //active LOW
 			}
 		}
 		threeCharPrint(dashes);
