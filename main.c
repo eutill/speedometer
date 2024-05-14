@@ -214,42 +214,58 @@ void uartStr(char* valStr) {
 }
 
 void printTimeMicros(unsigned long timeMicros, uint8_t uartPrint) {
-	if(timeMicros >= 1000000000) {
-		timeMicros = 999999999;
-	}
-	char microsString[11];
+	char microsString[11]; //10 digits to accommodate max value of unsigned long (32 bit) in µs
 	snprintf(microsString, 11, "%.10lu", timeMicros);
 	if(uartPrint) {
 		uartStr(microsString);
 	}
-	for(int i=0;i<10;i++) { //replace each ASCII digit with its segment representation
-		microsString[i] -= '0';
-		microsString[i] = digits[(uint8_t) microsString[i]];
-	}
-	microsString[3] |= (1<<7); //decimal point for seconds
-	microsString[6] |= (1<<7); //decimal point for milliseconds
-	unsigned long boundaries[] = {10000,100000,1000000,10000000,100000000,1000000000};
-	for(int j=0;j<6;j++) {
-		if(timeMicros < boundaries[j]) {
-#ifdef SHREG_BACKWARDS
-			for(int8_t b=2;b>=0;b--) { //First digit is transmitted first
-#else
-			for(int8_t b=0;b<3;b++) { //Last digit is transmitted first
-#endif
-				char symbol = microsString[8-j-b];
-				if(b==0) {
-					if(j>2) { //if displayed value is in seconds, the last digit will have an appended point
-						symbol |= (1 << 7);
-					} else { //if displayed value is in millisecs, no appended point (also not a decimal point)
-						symbol &= ~(1 << 7);
-					}
-				}
-				shiftOut(symbol);
-			}
-			display();
+	int8_t i;
+	uint8_t mostSignificantDigit = 6; //index of microsString
+	for(i=0;i<6;i++) {
+		//find most significant digit
+		if(microsString[i] != '0') {
+			mostSignificantDigit = i;
 			break;
 		}
 	}
+	//rounding at 3rd most significant digit
+	if(microsString[mostSignificantDigit + 3] > '4') { //4th most significant digit is greater than 4, rounding needed
+		for(i=2;i>=0;i--) {
+			//add 1 and carry, if needed
+			if(microsString[mostSignificantDigit + i] == '9') {
+				microsString[mostSignificantDigit + i] = '0';
+				if(i==0 && mostSignificantDigit > 0) {
+					mostSignificantDigit--;
+					microsString[mostSignificantDigit] = '1';
+				}
+			} else {
+				microsString[mostSignificantDigit + i] += 1;
+				//no (further) carrying
+				break;
+			}
+		}
+	}
+
+	for(i=0;i<10;i++) { //replace each ASCII digit with its segment representation
+		microsString[i] -= '0';
+		microsString[i] = digits[(uint8_t) microsString[i]];
+	}
+	if(mostSignificantDigit == 0) {mostSignificantDigit = 1;} //unable to display 4-digit seconds
+	//add decimal and unit (seconds') points
+	if(mostSignificantDigit < 4) { //value displayed in seconds
+		microsString[3] |= (1<<7); //decimal point for seconds
+		microsString[mostSignificantDigit+2] |= (1 << 7); //last digit gets an appended point to show seconds
+	} else if(mostSignificantDigit > 4) { //value displayed in milliseconds with decimal point
+		microsString[6] |= (1<<7); //decimal point for milliseconds
+	}
+#ifdef SHREG_BACKWARDS
+	for(i=0;i<3;i++) { //First digit is transmitted first
+#else
+	for(i=2;i>=0;i--) { //Last digit is transmitted first
+#endif
+		shiftOut(microsString[mostSignificantDigit + i]);
+	}
+	display();
 }
 
 unsigned long calcTime() {
@@ -312,6 +328,7 @@ int main(void) {
 	unsigned long measurement;
 	uint8_t *titleList[] = {avg, min, max};
 	unsigned long *valueList[] = {&avgSum, &minVal, &maxVal};
+
 	while(1) {
 		printTimeMicros(0, UART_NO_PRINT);
 		while(1) { //Normal (single-shot) operation
